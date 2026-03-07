@@ -43,8 +43,12 @@ function wgpc_init() {
 		return;
 	}
 
-	// Функция имени таблицы нужна везде (админка, позже — обработка заказов).
+	// Функция имени таблицы нужна везде (админка, обработка заказов).
 	require_once WGPC_PLUGIN_DIR . 'includes/wgpc-database.php';
+
+	// Обработчик заказа: при «Выполнен» подставляем физическую карту из пула (приоритет 9, до PW).
+	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-order-handler.php';
+	new WGPC_Order_Handler();
 
 	// Админка: пункт меню и страница «Физические карты» — только в бэкенде.
 	if ( is_admin() ) {
