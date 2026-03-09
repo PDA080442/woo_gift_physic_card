@@ -46,12 +46,17 @@ function wgpc_init() {
 	// Функция имени таблицы нужна везде (админка, обработка заказов).
 	require_once WGPC_PLUGIN_DIR . 'includes/wgpc-database.php';
 
+	// Совместимость с PW: если в таблице pimwick_gift_card нет столбца recipient_name — добавить (один раз).
+	require_once WGPC_PLUGIN_DIR . 'includes/wgpc-pw-compat.php';
+	wgpc_ensure_pw_recipient_name_column();
+
 	// Обработчик заказа: при «Выполнен» подставляем физическую карту из пула (приоритет 9, до PW).
 	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-order-handler.php';
 	new WGPC_Order_Handler();
 
 	// Админка: пункт меню и страница «Физические карты» — только в бэкенде.
 	if ( is_admin() ) {
+		require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-import-1c.php';
 		require_once WGPC_PLUGIN_DIR . 'admin/class-wgpc-admin.php';
 		new WGPC_Admin();
 	}
