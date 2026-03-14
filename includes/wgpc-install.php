@@ -38,6 +38,7 @@ function wgpc_install_table() {
 		external_id varchar(64) DEFAULT NULL,
 		created_at datetime NOT NULL,
 		updated_at datetime NOT NULL,
+		exported_to_1c_at datetime DEFAULT NULL,
 		notes text DEFAULT NULL,
 		PRIMARY KEY  (id),
 		UNIQUE KEY card_number (card_number),
@@ -49,4 +50,21 @@ function wgpc_install_table() {
 	dbDelta( $sql );
 
 	update_option( 'mpgc_db_version', WGPC_VERSION );
+}
+
+/**
+ * Добавляет поле exported_to_1c_at в таблицу, если его ещё нет (обновление существующих установок).
+ * Вызывается из wgpc_init() при каждой загрузке.
+ *
+ * @return void
+ */
+function wgpc_maybe_add_exported_column() {
+	global $wpdb;
+	$table_name   = wgpc_get_table_name();
+	$column       = 'exported_to_1c_at';
+	$table_escaped = '`' . str_replace( '`', '``', $table_name ) . '`';
+	$row          = $wpdb->get_row( $wpdb->prepare( "SHOW COLUMNS FROM $table_escaped LIKE %s", $column ), ARRAY_A );
+	if ( empty( $row ) ) {
+		$wpdb->query( "ALTER TABLE $table_escaped ADD COLUMN `$column` datetime DEFAULT NULL AFTER updated_at" );
+	}
 }

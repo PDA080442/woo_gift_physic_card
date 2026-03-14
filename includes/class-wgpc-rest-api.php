@@ -62,6 +62,17 @@ class WGPC_REST_API {
 				),
 			)
 		);
+
+		register_rest_route(
+			'wgpc/v1',
+			'/cards/exports/ack',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'permission_callback' => array( $this, 'check_import_permission' ),
+				'callback'            => array( $this, 'handle_cards_export_ack' ),
+				'args'                => array(),
+			)
+		);
 	}
 
 	/**
@@ -176,6 +187,62 @@ class WGPC_REST_API {
 		}
 
 		return new WP_REST_Response( array( 'cards' => $cards ), 200 );
+	}
+
+	/**
+	 * Обработчик POST /wp-json/wgpc/v1/cards/exports/ack.
+	 *
+	 * 1С отправляет список external_id, которые обработала. Сайт помечает карты как выгруженные
+	 * (заполняет exported_to_1c_at). Ожидаемый JSON: { "external_ids": ["1c-001", "1c-002"] }
+	 *
+	 * @param WP_REST_Request $request Запрос.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function handle_cards_export_ack( $request ) {
+		$body = $request->get_json_params();
+		if ( ! is_array( $body ) ) {
+			return new WP_Error(
+				'wgpc_invalid_body',
+				__( 'Тело запроса должно быть JSON с полем external_ids (массив).', 'woo-gift-physic-card' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$external_ids = isset( $body['external_ids'] ) && is_array( $body['external_ids'] ) ? $body['external_ids'] : array();
+		$external_ids = array_map( 'trim', array_map( 'strval', $external_ids ) );
+		$external_ids = array_filter( $external_ids, function ( $id ) {
+			return $id !== '' && strlen( $id ) <= 64;
+		} );
+		$external_ids = array_values( array_unique( $external_ids ) );
+
+		if ( empty( $external_ids ) ) {
+			return new WP_REST_Response(
+				array(
+					'success' => true,
+					'updated'  => 0,
+					'message'  => __( 'Нет идентификаторов для подтверждения.', 'woo-gift-physic-card' ),
+				),
+				200
+			);
+		}
+
+		global $wpdb;
+		$table_name   = wgpc_get_table_name();
+		$now          = current_time( 'mysql' );
+		$placeholders = implode( ', ', array_fill( 0, count( $external_ids ), '%s' ) );
+		$sql          = $wpdb->prepare(
+			"UPDATE $table_name SET exported_to_1c_at = %s WHERE external_id IN ($placeholders)",
+			array_merge( array( $now ), $external_ids )
+		);
+		$updated = $wpdb->query( $sql );
+
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'updated'  => $updated !== false ? (int) $updated : 0,
+			),
+			200
+		);
 	}
 }
 
