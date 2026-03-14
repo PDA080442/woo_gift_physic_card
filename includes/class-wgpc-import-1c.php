@@ -33,7 +33,7 @@ class WGPC_Import_1C {
 
 	/**
 	 * Импортирует массив записей карт в таблицу.
-	 * Каждая запись — массив с ключами: external_id, card_number, pin, nominal, status_1c (опционально).
+	 * Каждая запись — массив с ключами: external_id, card_number, nominal, status_1c (опционально).
 	 *
 	 * @param array<int, array<string, mixed>> $rows Массив записей (поля после разбора CSV/XML).
 	 * @return array{ inserted: int, updated: int, skipped: int, errors: array<int, string> }
@@ -59,7 +59,6 @@ class WGPC_Import_1C {
 			}
 
 			$external_id = isset( $row['external_id'] ) ? trim( (string) $row['external_id'] ) : null;
-			$pin         = isset( $row['pin'] ) ? trim( (string) $row['pin'] ) : null;
 			$nominal     = isset( $row['nominal'] ) && $row['nominal'] !== '' ? (float) $row['nominal'] : null;
 			$status_1c   = isset( $row['status_1c'] ) ? trim( (string) $row['status_1c'] ) : '';
 			$status      = self::map_status( $status_1c );
@@ -95,12 +94,11 @@ class WGPC_Import_1C {
 					$table_name,
 					array(
 						'nominal'    => $nominal,
-						'pin'        => $pin,
 						'status'     => $status,
 						'updated_at' => $now,
 					),
 					array( 'id' => (int) $existing['id'] ),
-					array( '%f', '%s', '%s', '%s' ),
+					array( '%f', '%s', '%s' ),
 					array( '%d' )
 				);
 				if ( $wpdb->last_error ) {
@@ -116,14 +114,13 @@ class WGPC_Import_1C {
 				$table_name,
 				array(
 					'card_number' => $card_number,
-					'pin'         => $pin,
 					'status'      => $status,
 					'nominal'     => $nominal,
 					'external_id' => $external_id,
 					'created_at'  => $now,
 					'updated_at'  => $now,
 				),
-				array( '%s', '%s', '%s', '%f', '%s', '%s', '%s' )
+				array( '%s', '%s', '%f', '%s', '%s', '%s' )
 			);
 			if ( ! $inserted ) {
 				if ( $wpdb->last_error && strpos( $wpdb->last_error, 'Duplicate' ) !== false ) {

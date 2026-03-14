@@ -38,6 +38,8 @@ class WGPC_Admin {
 	 */
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
+		// Выгрузка CSV — до вывода страницы, иначе в ответ попадёт HTML админки.
+		add_action( 'load-woocommerce_page_' . self::PAGE_SLUG, array( $this, 'maybe_export_1c' ) );
 	}
 
 	/**
@@ -81,7 +83,7 @@ class WGPC_Admin {
 			$params[] = $filter_status;
 		}
 
-		$sql = "SELECT id, card_number, pin, status, nominal, order_id, created_at FROM $table_name WHERE $where ORDER BY id DESC LIMIT 500";
+		$sql = "SELECT id, card_number, status, nominal, order_id, created_at FROM $table_name WHERE $where ORDER BY id DESC LIMIT 500";
 		if ( ! empty( $params ) ) {
 			$sql = $wpdb->prepare( $sql, $params );
 		}
@@ -136,10 +138,6 @@ class WGPC_Admin {
 						<td><input type="text" name="card_number" id="wgpc_card_number" class="regular-text" required value="" /></td>
 					</tr>
 					<tr>
-						<th><label for="wgpc_pin"><?php esc_html_e( 'PIN', 'woo-gift-physic-card' ); ?></label></th>
-						<td><input type="text" name="pin" id="wgpc_pin" class="regular-text" value="" /></td>
-					</tr>
-					<tr>
 						<th><label for="wgpc_nominal"><?php esc_html_e( 'Номинал (₽)', 'woo-gift-physic-card' ); ?></label></th>
 						<td>
 							<input type="number" name="nominal" id="wgpc_nominal" min="0" step="0.01" value="" placeholder="<?php esc_attr_e( 'пусто = любая сумма', 'woo-gift-physic-card' ); ?>" />
@@ -167,13 +165,33 @@ class WGPC_Admin {
 			</form>
 
 			<h2 style="margin-top: 2em;"><?php esc_html_e( 'Импорт из 1С', 'woo-gift-physic-card' ); ?></h2>
-			<p class="description"><?php esc_html_e( 'Загрузите CSV-файл с разделителем «;». Колонки: external_id; card_number; pin; nominal; status_1c. Первая строка — заголовок.', 'woo-gift-physic-card' ); ?></p>
+			<p class="description"><?php esc_html_e( 'Загрузите CSV-файл с разделителем «;». Колонки: external_id; card_number; nominal; status_1c. Первая строка — заголовок.', 'woo-gift-physic-card' ); ?></p>
 			<form method="post" action="" enctype="multipart/form-data" style="max-width: 600px; margin: 1em 0;">
 				<?php wp_nonce_field( 'wgpc_import_1c', 'wgpc_import_nonce' ); ?>
 				<p>
 					<input type="file" name="wgpc_import_file" accept=".csv" required />
 					<button type="submit" name="wgpc_import_1c" class="button button-primary" style="margin-left: 8px;"><?php esc_html_e( 'Загрузить и импортировать', 'woo-gift-physic-card' ); ?></button>
 				</p>
+			</form>
+
+			<h2 style="margin-top: 2em;"><?php esc_html_e( 'Выгрузка для 1С', 'woo-gift-physic-card' ); ?></h2>
+			<?php
+			$export_count = count( WGPC_Export_1C::get_cards_for_export( 1000 ) );
+			?>
+			<p class="description">
+				<?php esc_html_e( 'Скачать CSV со статусами активированных/проданных карт. В выгрузку попадают только карты с заполненным ИД 1С (external_id) — иначе 1С не сможет сопоставить запись.', 'woo-gift-physic-card' ); ?>
+				<br />
+				<?php
+				printf(
+					/* translators: %d: number of cards */
+					esc_html__( 'Сейчас таких карт: %d. Колонки CSV: external_id; card_number; status; order_id; activated_at.', 'woo-gift-physic-card' ),
+					$export_count
+				);
+				?>
+			</p>
+			<form method="post" action="" style="margin: 1em 0;">
+				<?php wp_nonce_field( 'wgpc_export_1c', 'wgpc_export_nonce' ); ?>
+				<button type="submit" name="wgpc_export_1c" class="button"><?php esc_html_e( 'Выгрузить статусы для 1С (CSV)', 'woo-gift-physic-card' ); ?></button>
 			</form>
 
 			<hr />
@@ -199,7 +217,6 @@ class WGPC_Admin {
 					<tr>
 						<th><?php esc_html_e( 'ID', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Номер карты', 'woo-gift-physic-card' ); ?></th>
-						<th><?php esc_html_e( 'PIN', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Номинал', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Статус', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Заказ', 'woo-gift-physic-card' ); ?></th>
@@ -209,7 +226,7 @@ class WGPC_Admin {
 				<tbody>
 					<?php
 					if ( empty( $rows ) ) {
-						echo '<tr><td colspan="7">' . esc_html__( 'Нет карт.', 'woo-gift-physic-card' ) . '</td></tr>';
+						echo '<tr><td colspan="6">' . esc_html__( 'Нет карт.', 'woo-gift-physic-card' ) . '</td></tr>';
 					} else {
 						foreach ( $rows as $row ) {
 							$nominal = $row['nominal'] !== null ? number_format_i18n( (float) $row['nominal'], 2 ) : '—';
@@ -222,7 +239,6 @@ class WGPC_Admin {
 							echo '<tr>';
 							echo '<td>' . (int) $row['id'] . '</td>';
 							echo '<td>' . esc_html( $row['card_number'] ) . '</td>';
-							echo '<td>' . esc_html( $row['pin'] !== null ? $row['pin'] : '—' ) . '</td>';
 							echo '<td>' . esc_html( $nominal ) . '</td>';
 							echo '<td>' . esc_html( $row['status'] ) . '</td>';
 							echo '<td>' . wp_kses_post( $order_link ) . '</td>';
@@ -260,8 +276,6 @@ class WGPC_Admin {
 			exit;
 		}
 
-		$pin    = isset( $_POST['pin'] ) ? sanitize_text_field( wp_unslash( $_POST['pin'] ) ) : null;
-		$pin    = $pin !== '' ? $pin : null;
 		$nominal = isset( $_POST['nominal'] ) ? sanitize_text_field( wp_unslash( $_POST['nominal'] ) ) : null;
 		$nominal = $nominal !== '' ? (float) $nominal : null;
 		$status = isset( $_POST['status'] ) ? sanitize_text_field( wp_unslash( $_POST['status'] ) ) : 'available';
@@ -291,7 +305,6 @@ class WGPC_Admin {
 			$table_name,
 			array(
 				'card_number' => $card_number,
-				'pin'         => $pin,
 				'status'      => $status,
 				'nominal'     => $nominal,
 				'order_id'    => null,
@@ -302,7 +315,7 @@ class WGPC_Admin {
 				'updated_at'  => $now,
 				'notes'       => $notes,
 			),
-			array( '%s', '%s', '%s', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s' )
 		);
 
 		if ( $wpdb->last_error ) {
@@ -311,6 +324,35 @@ class WGPC_Admin {
 		}
 
 		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'wgpc_added' => '1' ), admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * Вызывается на load-woocommerce_page_wgpc-physical-cards (до вывода HTML).
+	 * Если запрос на выгрузку CSV — отдаёт файл и завершает выполнение.
+	 */
+	public function maybe_export_1c() {
+		if ( ! isset( $_POST['wgpc_export_1c'] ) || ! isset( $_POST['wgpc_export_nonce'] ) ) {
+			return;
+		}
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'woo-gift-physic-card' ) );
+		}
+
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['wgpc_export_nonce'] ) ), 'wgpc_export_1c' ) ) {
+			wp_die( esc_html__( 'Ошибка проверки безопасности. Обновите страницу и попробуйте снова.', 'woo-gift-physic-card' ) );
+		}
+
+		$rows = WGPC_Export_1C::get_cards_for_export( 1000 );
+		$csv  = WGPC_Export_1C::format_as_csv( $rows );
+
+		$filename = 'wgpc-cards-export-' . gmdate( 'Y-m-d-His' ) . '.csv';
+		header( 'Content-Type: text/csv; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+		header( 'Cache-Control: no-cache, must-revalidate' );
+		echo "\xEF\xBB\xBF";
+		echo $csv;
 		exit;
 	}
 
@@ -375,7 +417,7 @@ class WGPC_Admin {
 			return strtolower( $h );
 		}, $header );
 
-		$expected = array( 'external_id', 'card_number', 'pin', 'nominal', 'status_1c' );
+		$expected = array( 'external_id', 'card_number', 'nominal', 'status_1c' );
 		$indexes  = array();
 		foreach ( $expected as $col ) {
 			$pos = array_search( $col, $header, true );
@@ -394,7 +436,6 @@ class WGPC_Admin {
 			$row = array(
 				'external_id' => isset( $line[ $indexes['external_id'] ] ) ? trim( (string) $line[ $indexes['external_id'] ] ) : '',
 				'card_number' => isset( $line[ $indexes['card_number'] ] ) ? trim( (string) $line[ $indexes['card_number'] ] ) : '',
-				'pin'         => isset( $line[ $indexes['pin'] ] ) ? trim( (string) $line[ $indexes['pin'] ] ) : '',
 				'nominal'     => isset( $line[ $indexes['nominal'] ] ) ? trim( (string) $line[ $indexes['nominal'] ] ) : '',
 				'status_1c'   => isset( $line[ $indexes['status_1c'] ] ) ? trim( (string) $line[ $indexes['status_1c'] ] ) : '',
 			);

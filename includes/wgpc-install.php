@@ -30,7 +30,6 @@ function wgpc_install_table() {
 	$sql = "CREATE TABLE $table_name (
 		id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 		card_number varchar(128) NOT NULL,
-		pin varchar(32) DEFAULT NULL,
 		status varchar(32) NOT NULL DEFAULT 'available',
 		nominal decimal(12,2) DEFAULT NULL,
 		order_id bigint(20) unsigned DEFAULT NULL,

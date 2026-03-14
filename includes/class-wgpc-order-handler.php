@@ -65,7 +65,12 @@ class WGPC_Order_Handler {
 
 		foreach ( $order->get_items( 'line_item' ) as $order_item_id => $order_item ) {
 			$product = $order_item->get_product();
-			if ( ! $product || ! is_a( $product, 'WC_Product_PW_Gift_Card' ) ) {
+			if ( ! $product ) {
+				continue;
+			}
+			// Родительский товар — PW Gift Card; get_product() для вариации возвращает WC_Product_Variation, не WC_Product_PW_Gift_Card.
+			$product_to_check = $product->get_parent_id() ? wc_get_product( $product->get_parent_id() ) : $product;
+			if ( ! $product_to_check || ! is_a( $product_to_check, 'WC_Product_PW_Gift_Card' ) ) {
 				continue;
 			}
 
@@ -164,12 +169,14 @@ class WGPC_Order_Handler {
 	 */
 	private function take_available_card( $table_name, $amount, $wpdb ) {
 		// Сначала карта с таким же номиналом, потом с «любая сумма» (nominal IS NULL).
+		// (nominal = %f) DESC: точное совпадение даёт 1 (первыми), NULL даёт NULL (в конце при DESC).
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				"SELECT id, card_number FROM $table_name 
 				WHERE status = 'available' AND ( nominal = %f OR nominal IS NULL ) 
-				ORDER BY nominal ASC 
+				ORDER BY ( nominal = %f ) DESC, nominal ASC 
 				LIMIT 1",
+				$amount,
 				$amount
 			),
 			ARRAY_A

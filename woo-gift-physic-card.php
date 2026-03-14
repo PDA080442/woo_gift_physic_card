@@ -57,6 +57,7 @@ function wgpc_init() {
 	// Админка: пункт меню и страница «Физические карты» — только в бэкенде.
 	if ( is_admin() ) {
 		require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-import-1c.php';
+		require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-export-1c.php';
 		require_once WGPC_PLUGIN_DIR . 'admin/class-wgpc-admin.php';
 		new WGPC_Admin();
 	}
