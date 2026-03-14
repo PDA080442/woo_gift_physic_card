@@ -85,6 +85,15 @@ class WGPC_REST_API {
 	 * @return bool|WP_Error true при успехе, WP_Error при отказе.
 	 */
 	public function check_import_permission( $request ) {
+		if ( get_option( 'wgpc_rest_enabled', '1' ) !== '1' && get_option( 'wgpc_rest_enabled', '1' ) !== true ) {
+			$this->log_rest_failure( $request, 'wgpc_rest_disabled', 'REST-обмен с 1С отключён в настройках.' );
+			return new WP_Error(
+				'wgpc_rest_disabled',
+				__( 'REST-обмен отключён в настройках плагина.', 'woo-gift-physic-card' ),
+				array( 'status' => 503 )
+			);
+		}
+
 		$client_ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
 
 		$allowed_ips_raw = get_option( 'wgpc_rest_allowed_ips', '' );
@@ -152,6 +161,21 @@ class WGPC_REST_API {
 		$ip     = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '-';
 		$line   = sprintf( '[WGPC REST] %s %s | IP: %s | %s (%s)', $method, $route, $ip, $message, $code );
 		error_log( $line );
+
+		$entries = get_option( 'wgpc_rest_log', array() );
+		if ( ! is_array( $entries ) ) {
+			$entries = array();
+		}
+		array_unshift( $entries, array(
+			'time'    => current_time( 'Y-m-d H:i:s' ),
+			'method'  => $method,
+			'route'   => $route,
+			'ip'      => $ip,
+			'code'    => $code,
+			'message' => $message,
+		) );
+		$entries = array_slice( $entries, 0, 50 );
+		update_option( 'wgpc_rest_log', $entries );
 	}
 
 	/**
@@ -208,7 +232,8 @@ class WGPC_REST_API {
 			$limit = 5000;
 		}
 
-		$rows = WGPC_Export_1C::get_cards_for_export( $limit );
+		$only_not_exported = get_option( 'wgpc_rest_export_only_new', '0' ) === '1';
+		$rows = WGPC_Export_1C::get_cards_for_export( $limit, $only_not_exported );
 		$cards = array();
 
 		foreach ( $rows as $row ) {

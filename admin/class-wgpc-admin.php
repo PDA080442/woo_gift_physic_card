@@ -66,6 +66,8 @@ class WGPC_Admin {
 		$this->handle_add_card();
 		// Обработка POST — настройки REST для обмена с 1С (редирект после сохранения).
 		$this->handle_rest_settings_save();
+		// Обработка POST — очистка лога ошибок REST.
+		$this->handle_rest_log_clear();
 
 		$table_name = wgpc_get_table_name();
 		global $wpdb;
@@ -221,11 +223,74 @@ class WGPC_Admin {
 							<p class="description"><?php esc_html_e( 'Один IP на строку или через запятую. Пусто = проверка по IP отключена.', 'woo-gift-physic-card' ); ?></p>
 						</td>
 					</tr>
+					<tr>
+						<th><?php esc_html_e( 'REST-обмен', 'woo-gift-physic-card' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="wgpc_rest_enabled" value="1" <?php checked( get_option( 'wgpc_rest_enabled', '1' ), '1' ); ?> />
+								<?php esc_html_e( 'Включить REST-обмен с 1С', 'woo-gift-physic-card' ); ?>
+							</label>
+							<p class="description"><?php esc_html_e( 'Если снять галочку, все запросы к REST API будут отклоняться (503).', 'woo-gift-physic-card' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Выгрузка статусов', 'woo-gift-physic-card' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="wgpc_rest_export_only_new" value="1" <?php checked( get_option( 'wgpc_rest_export_only_new', '0' ), '1' ); ?> />
+								<?php esc_html_e( 'Отдавать только ещё не выгруженные в 1С карты', 'woo-gift-physic-card' ); ?>
+							</label>
+							<p class="description"><?php esc_html_e( 'При включении GET /cards/exports вернёт только карты без подтверждения получения (exported_to_1c_at пусто).', 'woo-gift-physic-card' ); ?></p>
+						</td>
+					</tr>
 				</table>
 				<p class="submit">
 					<button type="submit" name="wgpc_save_rest_settings" class="button button-primary"><?php esc_html_e( 'Сохранить настройки REST', 'woo-gift-physic-card' ); ?></button>
 				</p>
 			</form>
+
+			<h3 style="margin-top: 1.5em;"><?php esc_html_e( 'Лог ошибок REST', 'woo-gift-physic-card' ); ?></h3>
+			<?php
+			$rest_log = get_option( 'wgpc_rest_log', array() );
+			if ( ! is_array( $rest_log ) ) {
+				$rest_log = array();
+			}
+			?>
+			<?php if ( empty( $rest_log ) ) : ?>
+				<p class="description"><?php esc_html_e( 'Ошибок пока не было. Сюда попадают неудачные попытки входа (неверный токен, IP не в списке и т.п.).', 'woo-gift-physic-card' ); ?></p>
+			<?php else : ?>
+				<form method="post" action="" style="margin-bottom: 0.5em;">
+					<?php wp_nonce_field( 'wgpc_clear_rest_log', 'wgpc_clear_log_nonce' ); ?>
+					<button type="submit" name="wgpc_clear_rest_log" class="button"><?php esc_html_e( 'Очистить лог', 'woo-gift-physic-card' ); ?></button>
+				</form>
+				<table class="wp-list-table widefat fixed striped" style="max-width: 900px;">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'Время', 'woo-gift-physic-card' ); ?></th>
+							<th><?php esc_html_e( 'Метод', 'woo-gift-physic-card' ); ?></th>
+							<th><?php esc_html_e( 'Маршрут', 'woo-gift-physic-card' ); ?></th>
+							<th><?php esc_html_e( 'IP', 'woo-gift-physic-card' ); ?></th>
+							<th><?php esc_html_e( 'Код', 'woo-gift-physic-card' ); ?></th>
+							<th><?php esc_html_e( 'Сообщение', 'woo-gift-physic-card' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $rest_log as $entry ) : ?>
+							<?php
+							$e = wp_parse_args( $entry, array( 'time' => '', 'method' => '', 'route' => '', 'ip' => '', 'code' => '', 'message' => '' ) );
+							?>
+							<tr>
+								<td><?php echo esc_html( $e['time'] ); ?></td>
+								<td><?php echo esc_html( $e['method'] ); ?></td>
+								<td><?php echo esc_html( $e['route'] ); ?></td>
+								<td><?php echo esc_html( $e['ip'] ); ?></td>
+								<td><?php echo esc_html( $e['code'] ); ?></td>
+								<td><?php echo esc_html( $e['message'] ); ?></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
 
 			<hr />
 
@@ -386,6 +451,32 @@ class WGPC_Admin {
 		$allowed_ips = isset( $_POST['wgpc_rest_allowed_ips'] ) ? sanitize_textarea_field( wp_unslash( $_POST['wgpc_rest_allowed_ips'] ) ) : '';
 		update_option( 'wgpc_rest_allowed_ips', $allowed_ips );
 
+		update_option( 'wgpc_rest_enabled', isset( $_POST['wgpc_rest_enabled'] ) ? '1' : '0' );
+		update_option( 'wgpc_rest_export_only_new', isset( $_POST['wgpc_rest_export_only_new'] ) ? '1' : '0' );
+
+		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'wgpc_rest_saved' => '1' ), admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * Обработка POST: очистка лога ошибок REST. Редирект после успеха.
+	 *
+	 * @return void
+	 */
+	private function handle_rest_log_clear() {
+		if ( ! isset( $_POST['wgpc_clear_rest_log'] ) || ! isset( $_POST['wgpc_clear_log_nonce'] ) ) {
+			return;
+		}
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'woo-gift-physic-card' ) );
+		}
+
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['wgpc_clear_log_nonce'] ) ), 'wgpc_clear_rest_log' ) ) {
+			wp_die( esc_html__( 'Ошибка проверки безопасности. Обновите страницу и попробуйте снова.', 'woo-gift-physic-card' ) );
+		}
+
+		delete_option( 'wgpc_rest_log' );
 		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'wgpc_rest_saved' => '1' ), admin_url( 'admin.php' ) ) );
 		exit;
 	}

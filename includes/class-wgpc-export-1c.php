@@ -18,12 +18,18 @@ class WGPC_Export_1C {
 	/**
 	 * Возвращает карты со статусом sold или activated и непустым external_id (связь с 1С).
 	 *
-	 * @param int|null $limit Максимум записей (по умолчанию 1000).
+	 * @param int|null $limit              Максимум записей (по умолчанию 1000).
+	 * @param bool     $only_not_exported  true — только карты, ещё не подтверждённые выгрузкой в 1С (exported_to_1c_at IS NULL).
 	 * @return array<int, array<string, mixed>>
 	 */
-	public static function get_cards_for_export( $limit = 1000 ) {
+	public static function get_cards_for_export( $limit = 1000, $only_not_exported = false ) {
 		global $wpdb;
 		$table_name = wgpc_get_table_name();
+
+		$where_exported = '';
+		if ( $only_not_exported ) {
+			$where_exported = " AND (exported_to_1c_at IS NULL OR exported_to_1c_at = '')";
+		}
 
 		$sql = $wpdb->prepare(
 			"SELECT external_id, card_number, status, order_id, updated_at
@@ -31,6 +37,7 @@ class WGPC_Export_1C {
 			WHERE status IN ('sold', 'activated')
 			AND external_id IS NOT NULL
 			AND TRIM(external_id) != ''
+			$where_exported
 			ORDER BY updated_at DESC
 			LIMIT %d",
 			$limit
