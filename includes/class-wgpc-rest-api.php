@@ -86,7 +86,7 @@ class WGPC_REST_API {
 	 */
 	public function check_import_permission( $request ) {
 		if ( get_option( 'wgpc_rest_enabled', '1' ) !== '1' && get_option( 'wgpc_rest_enabled', '1' ) !== true ) {
-			$this->log_rest_failure( $request, 'wgpc_rest_disabled', 'REST-обмен с 1С отключён в настройках.' );
+			$this->log_rest_error( $request, 'wgpc_rest_disabled', 'REST-обмен с 1С отключён в настройках.' );
 			return new WP_Error(
 				'wgpc_rest_disabled',
 				__( 'REST-обмен отключён в настройках плагина.', 'woo-gift-physic-card' ),
@@ -100,7 +100,7 @@ class WGPC_REST_API {
 		if ( $allowed_ips_raw !== '' ) {
 			$allowed_ips = array_filter( array_map( 'trim', preg_split( '/[\s,]+/', $allowed_ips_raw ) ) );
 			if ( ! empty( $allowed_ips ) && ! in_array( $client_ip, $allowed_ips, true ) ) {
-				$this->log_rest_failure( $request, 'wgpc_ip_not_allowed', sprintf( 'IP не в белом списке: %s', $client_ip ) );
+				$this->log_rest_error( $request, 'wgpc_ip_not_allowed', sprintf( 'IP не в белом списке: %s', $client_ip ) );
 				return new WP_Error(
 					'wgpc_ip_not_allowed',
 					__( 'Доступ с вашего IP запрещён.', 'woo-gift-physic-card' ),
@@ -111,7 +111,7 @@ class WGPC_REST_API {
 
 		$saved_token = get_option( 'wgpc_rest_token', '' );
 		if ( $saved_token === '' ) {
-			$this->log_rest_failure( $request, 'wgpc_token_not_configured', 'REST-токен не настроен на сайте.' );
+			$this->log_rest_error( $request, 'wgpc_token_not_configured', 'REST-токен не настроен на сайте.' );
 			return new WP_Error(
 				'wgpc_token_not_configured',
 				__( 'REST-токен не настроен. Укажите токен в настройках плагина.', 'woo-gift-physic-card' ),
@@ -127,7 +127,7 @@ class WGPC_REST_API {
 			}
 		}
 		if ( $token === null || $token === '' ) {
-			$this->log_rest_failure( $request, 'wgpc_missing_token', 'Токен не передан в запросе.' );
+			$this->log_rest_error( $request, 'wgpc_missing_token', 'Токен не передан в запросе.' );
 			return new WP_Error(
 				'wgpc_missing_token',
 				__( 'Токен не передан. Укажите заголовок X-WGPC-Token или Authorization: Bearer &lt;token&gt;.', 'woo-gift-physic-card' ),
@@ -136,7 +136,7 @@ class WGPC_REST_API {
 		}
 
 		if ( ! hash_equals( (string) $saved_token, (string) $token ) ) {
-			$this->log_rest_failure( $request, 'wgpc_invalid_token', 'Неверный токен.' );
+			$this->log_rest_error( $request, 'wgpc_invalid_token', 'Неверный токен.' );
 			return new WP_Error(
 				'wgpc_invalid_token',
 				__( 'Неверный токен.', 'woo-gift-physic-card' ),
@@ -148,14 +148,14 @@ class WGPC_REST_API {
 	}
 
 	/**
-	 * Логирует неудачную попытку доступа к REST API (в error_log → debug.log при WP_DEBUG_LOG).
+	 * Логирует ошибку REST API: в error_log (debug.log при WP_DEBUG_LOG) и в опцию wgpc_rest_log для отображения в админке.
 	 *
-	 * @param WP_REST_Request $request   Запрос.
-	 * @param string          $code     Код ошибки.
-	 * @param string          $message   Сообщение.
+	 * @param WP_REST_Request $request Запрос (для метода, маршрута, IP).
+	 * @param string          $code    Код ошибки.
+	 * @param string          $message Сообщение.
 	 * @return void
 	 */
-	private function log_rest_failure( $request, $code, $message ) {
+	private function log_rest_error( $request, $code, $message ) {
 		$method = $request->get_method();
 		$route  = $request->get_route();
 		$ip     = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '-';
@@ -190,6 +190,7 @@ class WGPC_REST_API {
 	public function handle_cards_import( $request ) {
 		$body = $request->get_json_params();
 		if ( ! is_array( $body ) ) {
+			$this->log_rest_error( $request, 'wgpc_invalid_body', __( 'Пустой или некорректный JSON. Ожидается поле cards (массив).', 'woo-gift-physic-card' ) );
 			return new WP_Error(
 				'wgpc_invalid_body',
 				__( 'Тело запроса должно быть JSON с полем cards (массив).', 'woo-gift-physic-card' ),
@@ -199,6 +200,15 @@ class WGPC_REST_API {
 
 		$cards = isset( $body['cards'] ) && is_array( $body['cards'] ) ? $body['cards'] : array();
 		$result = WGPC_Import_1C::import_cards( $cards );
+
+		if ( ! empty( $result['errors'] ) ) {
+			$err_list = array_values( $result['errors'] );
+			$preview  = implode( '; ', array_slice( $err_list, 0, 5 ) );
+			if ( count( $err_list ) > 5 ) {
+				$preview .= ' … (+' . ( count( $err_list ) - 5 ) . ')';
+			}
+			$this->log_rest_error( $request, 'wgpc_import_errors', sprintf( __( 'Импорт: ошибки записи — %d шт. %s', 'woo-gift-physic-card' ), count( $err_list ), $preview ) );
+		}
 
 		$success = empty( $result['errors'] );
 
@@ -261,6 +271,7 @@ class WGPC_REST_API {
 	public function handle_cards_export_ack( $request ) {
 		$body = $request->get_json_params();
 		if ( ! is_array( $body ) ) {
+			$this->log_rest_error( $request, 'wgpc_invalid_body', __( 'Пустой или некорректный JSON. Ожидается поле external_ids (массив).', 'woo-gift-physic-card' ) );
 			return new WP_Error(
 				'wgpc_invalid_body',
 				__( 'Тело запроса должно быть JSON с полем external_ids (массив).', 'woo-gift-physic-card' ),
@@ -295,6 +306,10 @@ class WGPC_REST_API {
 			array_merge( array( $now ), $external_ids )
 		);
 		$updated = $wpdb->query( $sql );
+
+		if ( $wpdb->last_error ) {
+			$this->log_rest_error( $request, 'wgpc_export_ack_db_error', sprintf( __( 'Ошибка подтверждения выгрузки (БД): %s', 'woo-gift-physic-card' ), $wpdb->last_error ) );
+		}
 
 		return new WP_REST_Response(
 			array(
