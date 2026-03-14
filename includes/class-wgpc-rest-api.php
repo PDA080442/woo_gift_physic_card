@@ -43,6 +43,25 @@ class WGPC_REST_API {
 				'args'                => array(),
 			)
 		);
+
+		register_rest_route(
+			'wgpc/v1',
+			'/cards/exports',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'permission_callback' => array( $this, 'check_import_permission' ),
+				'callback'            => array( $this, 'handle_cards_export' ),
+				'args'                => array(
+					'limit' => array(
+						'type'              => 'integer',
+						'default'           => 1000,
+						'minimum'           => 1,
+						'maximum'           => 5000,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
 	}
 
 	/**
@@ -123,6 +142,40 @@ class WGPC_REST_API {
 			),
 			$success ? 200 : 207
 		);
+	}
+
+	/**
+	 * Обработчик GET /wp-json/wgpc/v1/cards/exports.
+	 *
+	 * Возвращает карты со статусом sold или activated и непустым external_id.
+	 * Ответ: { "cards": [ { "external_id", "card_number", "status", "order_id", "activated_at" }, ... ] }
+	 *
+	 * @param WP_REST_Request $request Запрос (опционально limit в query).
+	 * @return WP_REST_Response
+	 */
+	public function handle_cards_export( $request ) {
+		$limit = (int) $request->get_param( 'limit' );
+		if ( $limit < 1 ) {
+			$limit = 1000;
+		}
+		if ( $limit > 5000 ) {
+			$limit = 5000;
+		}
+
+		$rows = WGPC_Export_1C::get_cards_for_export( $limit );
+		$cards = array();
+
+		foreach ( $rows as $row ) {
+			$cards[] = array(
+				'external_id'   => isset( $row['external_id'] ) ? (string) $row['external_id'] : '',
+				'card_number'   => isset( $row['card_number'] ) ? (string) $row['card_number'] : '',
+				'status'        => isset( $row['status'] ) ? (string) $row['status'] : '',
+				'order_id'      => isset( $row['order_id'] ) && $row['order_id'] !== null ? (int) $row['order_id'] : null,
+				'activated_at'  => isset( $row['updated_at'] ) ? (string) $row['updated_at'] : '',
+			);
+		}
+
+		return new WP_REST_Response( array( 'cards' => $cards ), 200 );
 	}
 }
 
