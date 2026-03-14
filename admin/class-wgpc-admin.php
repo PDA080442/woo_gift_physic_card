@@ -64,6 +64,8 @@ class WGPC_Admin {
 		$this->handle_import_1c();
 		// Обработка POST — добавление новой карты. После успеха редирект с сообщением.
 		$this->handle_add_card();
+		// Обработка POST — настройки REST для обмена с 1С (редирект после сохранения).
+		$this->handle_rest_settings_save();
 
 		$table_name = wgpc_get_table_name();
 		global $wpdb;
@@ -192,6 +194,37 @@ class WGPC_Admin {
 			<form method="post" action="" style="margin: 1em 0;">
 				<?php wp_nonce_field( 'wgpc_export_1c', 'wgpc_export_nonce' ); ?>
 				<button type="submit" name="wgpc_export_1c" class="button"><?php esc_html_e( 'Выгрузить статусы для 1С (CSV)', 'woo-gift-physic-card' ); ?></button>
+			</form>
+
+			<h2 style="margin-top: 2em;"><?php esc_html_e( 'Обмен с 1С (REST API)', 'woo-gift-physic-card' ); ?></h2>
+			<p class="description"><?php esc_html_e( 'Токен и ограничение по IP для доступа 1С к маршрутам импорта и выгрузки. Неудачные попытки входа пишутся в лог (debug.log при включённом WP_DEBUG_LOG).', 'woo-gift-physic-card' ); ?></p>
+			<?php if ( isset( $_GET['wgpc_rest_saved'] ) && (int) $_GET['wgpc_rest_saved'] === 1 ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Настройки REST сохранены.', 'woo-gift-physic-card' ); ?></p></div>
+			<?php endif; ?>
+			<form method="post" action="" style="max-width: 600px; margin: 1em 0;">
+				<?php wp_nonce_field( 'wgpc_rest_settings', 'wgpc_rest_nonce' ); ?>
+				<table class="form-table">
+					<tr>
+						<th><label for="wgpc_rest_token"><?php esc_html_e( 'Токен для 1С', 'woo-gift-physic-card' ); ?></label></th>
+						<td>
+							<input type="password" name="wgpc_rest_token" id="wgpc_rest_token" class="regular-text" value="" autocomplete="off" />
+							<p class="description"><?php esc_html_e( 'Секретный ключ. 1С передаёт его в заголовке X-WGPC-Token. Оставьте пустым, чтобы не менять текущий токен.', 'woo-gift-physic-card' ); ?></p>
+							<?php if ( get_option( 'wgpc_rest_token', '' ) !== '' ) : ?>
+								<p class="description"><?php esc_html_e( 'Текущий токен задан (отображается как ••••••).', 'woo-gift-physic-card' ); ?></p>
+							<?php endif; ?>
+						</td>
+					</tr>
+					<tr>
+						<th><label for="wgpc_rest_allowed_ips"><?php esc_html_e( 'Разрешённые IP', 'woo-gift-physic-card' ); ?></label></th>
+						<td>
+							<textarea name="wgpc_rest_allowed_ips" id="wgpc_rest_allowed_ips" rows="3" class="large-text" placeholder="192.168.1.1&#10;10.0.0.1"><?php echo esc_textarea( get_option( 'wgpc_rest_allowed_ips', '' ) ); ?></textarea>
+							<p class="description"><?php esc_html_e( 'Один IP на строку или через запятую. Пусто = проверка по IP отключена.', 'woo-gift-physic-card' ); ?></p>
+						</td>
+					</tr>
+				</table>
+				<p class="submit">
+					<button type="submit" name="wgpc_save_rest_settings" class="button button-primary"><?php esc_html_e( 'Сохранить настройки REST', 'woo-gift-physic-card' ); ?></button>
+				</p>
 			</form>
 
 			<hr />
@@ -324,6 +357,36 @@ class WGPC_Admin {
 		}
 
 		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'wgpc_added' => '1' ), admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * Обработка POST: сохранение настроек REST (токен, разрешённые IP). Редирект после успеха.
+	 *
+	 * @return void
+	 */
+	private function handle_rest_settings_save() {
+		if ( ! isset( $_POST['wgpc_save_rest_settings'] ) || ! isset( $_POST['wgpc_rest_nonce'] ) ) {
+			return;
+		}
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'woo-gift-physic-card' ) );
+		}
+
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['wgpc_rest_nonce'] ) ), 'wgpc_rest_settings' ) ) {
+			wp_die( esc_html__( 'Ошибка проверки безопасности. Обновите страницу и попробуйте снова.', 'woo-gift-physic-card' ) );
+		}
+
+		$new_token = isset( $_POST['wgpc_rest_token'] ) ? sanitize_text_field( wp_unslash( $_POST['wgpc_rest_token'] ) ) : '';
+		if ( $new_token !== '' ) {
+			update_option( 'wgpc_rest_token', $new_token );
+		}
+
+		$allowed_ips = isset( $_POST['wgpc_rest_allowed_ips'] ) ? sanitize_textarea_field( wp_unslash( $_POST['wgpc_rest_allowed_ips'] ) ) : '';
+		update_option( 'wgpc_rest_allowed_ips', $allowed_ips );
+
+		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'wgpc_rest_saved' => '1' ), admin_url( 'admin.php' ) ) );
 		exit;
 	}
 

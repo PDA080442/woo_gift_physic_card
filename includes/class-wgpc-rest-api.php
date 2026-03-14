@@ -76,16 +76,33 @@ class WGPC_REST_API {
 	}
 
 	/**
-	 * Проверка доступа к импорту: сверка токена из заголовка с сохранённым в настройках.
+	 * Проверка доступа: ограничение по IP (если задано), сверка токена из заголовка с настройками.
 	 *
 	 * Токен передаётся в заголовке X-WGPC-Token или Authorization: Bearer &lt;token&gt;.
+	 * Неудачные попытки логируются через error_log (попадают в debug.log при WP_DEBUG_LOG).
 	 *
 	 * @param WP_REST_Request $request Запрос.
 	 * @return bool|WP_Error true при успехе, WP_Error при отказе.
 	 */
 	public function check_import_permission( $request ) {
+		$client_ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+
+		$allowed_ips_raw = get_option( 'wgpc_rest_allowed_ips', '' );
+		if ( $allowed_ips_raw !== '' ) {
+			$allowed_ips = array_filter( array_map( 'trim', preg_split( '/[\s,]+/', $allowed_ips_raw ) ) );
+			if ( ! empty( $allowed_ips ) && ! in_array( $client_ip, $allowed_ips, true ) ) {
+				$this->log_rest_failure( $request, 'wgpc_ip_not_allowed', sprintf( 'IP не в белом списке: %s', $client_ip ) );
+				return new WP_Error(
+					'wgpc_ip_not_allowed',
+					__( 'Доступ с вашего IP запрещён.', 'woo-gift-physic-card' ),
+					array( 'status' => 403 )
+				);
+			}
+		}
+
 		$saved_token = get_option( 'wgpc_rest_token', '' );
 		if ( $saved_token === '' ) {
+			$this->log_rest_failure( $request, 'wgpc_token_not_configured', 'REST-токен не настроен на сайте.' );
 			return new WP_Error(
 				'wgpc_token_not_configured',
 				__( 'REST-токен не настроен. Укажите токен в настройках плагина.', 'woo-gift-physic-card' ),
@@ -101,6 +118,7 @@ class WGPC_REST_API {
 			}
 		}
 		if ( $token === null || $token === '' ) {
+			$this->log_rest_failure( $request, 'wgpc_missing_token', 'Токен не передан в запросе.' );
 			return new WP_Error(
 				'wgpc_missing_token',
 				__( 'Токен не передан. Укажите заголовок X-WGPC-Token или Authorization: Bearer &lt;token&gt;.', 'woo-gift-physic-card' ),
@@ -109,6 +127,7 @@ class WGPC_REST_API {
 		}
 
 		if ( ! hash_equals( (string) $saved_token, (string) $token ) ) {
+			$this->log_rest_failure( $request, 'wgpc_invalid_token', 'Неверный токен.' );
 			return new WP_Error(
 				'wgpc_invalid_token',
 				__( 'Неверный токен.', 'woo-gift-physic-card' ),
@@ -117,6 +136,22 @@ class WGPC_REST_API {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Логирует неудачную попытку доступа к REST API (в error_log → debug.log при WP_DEBUG_LOG).
+	 *
+	 * @param WP_REST_Request $request   Запрос.
+	 * @param string          $code     Код ошибки.
+	 * @param string          $message   Сообщение.
+	 * @return void
+	 */
+	private function log_rest_failure( $request, $code, $message ) {
+		$method = $request->get_method();
+		$route  = $request->get_route();
+		$ip     = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '-';
+		$line   = sprintf( '[WGPC REST] %s %s | IP: %s | %s (%s)', $method, $route, $ip, $message, $code );
+		error_log( $line );
 	}
 
 	/**
