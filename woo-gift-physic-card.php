@@ -54,6 +54,10 @@ function wgpc_init() {
 	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-order-handler.php';
 	new WGPC_Order_Handler();
 
+	// REST API для будущего обмена с 1С. Подключаем всегда, не только в админке.
+	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-rest-api.php';
+	new WGPC_REST_API();
+
 	// Админка: пункт меню и страница «Физические карты» — только в бэкенде.
 	if ( is_admin() ) {
 		require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-import-1c.php';
