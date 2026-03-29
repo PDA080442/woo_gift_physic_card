@@ -181,7 +181,7 @@ class WGPC_REST_API {
 	/**
 	 * Обработчик POST /wp-json/wgpc/v1/cards/import.
 	 *
-	 * Ожидаемый JSON: { "cards": [ { "external_id", "card_number", "nominal", "status_1c" }, ... ] }
+	 * Ожидаемый JSON: { "cards": [ { "external_id", "card_number", "nominal", "status_1c", "currency_code?", "balance?" }, ... ] }
 	 * Ответ: { "success": true, "inserted", "updated", "skipped", "errors": [] }
 	 *
 	 * @param WP_REST_Request $request Запрос.
@@ -228,7 +228,7 @@ class WGPC_REST_API {
 	 * Обработчик GET /wp-json/wgpc/v1/cards/exports.
 	 *
 	 * Возвращает карты со статусом sold или activated и непустым external_id.
-	 * Ответ: { "cards": [ { "external_id", "card_number", "status", "order_id", "activated_at" }, ... ] }
+	 * Ответ: { "cards": [ { "external_id", "card_number", "status", "currency_code", "balance", "order_id", "activated_at" }, ... ] }
 	 *
 	 * @param WP_REST_Request $request Запрос (опционально limit в query).
 	 * @return WP_REST_Response
@@ -251,6 +251,8 @@ class WGPC_REST_API {
 				'external_id'   => isset( $row['external_id'] ) ? (string) $row['external_id'] : '',
 				'card_number'   => isset( $row['card_number'] ) ? (string) $row['card_number'] : '',
 				'status'        => isset( $row['status'] ) ? (string) $row['status'] : '',
+				'currency_code' => isset( $row['currency_code'] ) ? (string) $row['currency_code'] : '',
+				'balance'       => isset( $row['balance'] ) && $row['balance'] !== null ? (float) $row['balance'] : null,
 				'order_id'      => isset( $row['order_id'] ) && $row['order_id'] !== null ? (int) $row['order_id'] : null,
 				'activated_at'  => isset( $row['updated_at'] ) ? (string) $row['updated_at'] : '',
 			);

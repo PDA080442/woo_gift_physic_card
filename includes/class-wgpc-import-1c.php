@@ -33,7 +33,8 @@ class WGPC_Import_1C {
 
 	/**
 	 * Импортирует массив записей карт в таблицу.
-	 * Каждая запись — массив с ключами: external_id, card_number, nominal, status_1c (опционально).
+	 * Каждая запись — массив с ключами: external_id, card_number, nominal, status_1c,
+	 * а также опционально currency_code и balance.
 	 *
 	 * @param array<int, array<string, mixed>> $rows Массив записей (поля после разбора CSV/XML).
 	 * @return array{ inserted: int, updated: int, skipped: int, errors: array<int, string> }
@@ -62,6 +63,11 @@ class WGPC_Import_1C {
 			$nominal     = isset( $row['nominal'] ) && $row['nominal'] !== '' ? (float) $row['nominal'] : null;
 			$status_1c   = isset( $row['status_1c'] ) ? trim( (string) $row['status_1c'] ) : '';
 			$status      = self::map_status( $status_1c );
+			$currency_code = self::resolve_currency_code( isset( $row['currency_code'] ) ? $row['currency_code'] : null );
+			$balance       = self::resolve_balance(
+				isset( $row['balance'] ) ? $row['balance'] : null,
+				$nominal
+			);
 
 			// Ищем существующую запись: сначала по external_id, потом по card_number.
 			$existing = null;
@@ -93,12 +99,14 @@ class WGPC_Import_1C {
 				$wpdb->update(
 					$table_name,
 					array(
-						'nominal'    => $nominal,
-						'status'     => $status,
-						'updated_at' => $now,
+						'nominal'       => $nominal,
+						'currency_code' => $currency_code,
+						'balance'       => $balance,
+						'status'        => $status,
+						'updated_at'    => $now,
 					),
 					array( 'id' => (int) $existing['id'] ),
-					array( '%f', '%s', '%s' ),
+					array( '%f', '%s', '%f', '%s', '%s' ),
 					array( '%d' )
 				);
 				if ( $wpdb->last_error ) {
@@ -113,14 +121,16 @@ class WGPC_Import_1C {
 			$inserted = $wpdb->insert(
 				$table_name,
 				array(
-					'card_number' => $card_number,
-					'status'      => $status,
-					'nominal'     => $nominal,
-					'external_id' => $external_id,
-					'created_at'  => $now,
-					'updated_at'  => $now,
+					'card_number'   => $card_number,
+					'status'        => $status,
+					'nominal'       => $nominal,
+					'currency_code' => $currency_code,
+					'balance'       => $balance,
+					'external_id'   => $external_id,
+					'created_at'    => $now,
+					'updated_at'    => $now,
 				),
-				array( '%s', '%s', '%f', '%s', '%s', '%s' )
+				array( '%s', '%s', '%f', '%s', '%f', '%s', '%s', '%s' )
 			);
 			if ( ! $inserted ) {
 				if ( $wpdb->last_error && strpos( $wpdb->last_error, 'Duplicate' ) !== false ) {
@@ -150,5 +160,36 @@ class WGPC_Import_1C {
 			return self::$status_map[ $status_1c ];
 		}
 		return 'available';
+	}
+
+	/**
+	 * Нормализует код валюты для импортируемой карты.
+	 *
+	 * @param mixed $currency_code Код валюты из импорта.
+	 * @return string
+	 */
+	private static function resolve_currency_code( $currency_code ) {
+		$currency_code = is_string( $currency_code ) ? strtoupper( trim( $currency_code ) ) : '';
+
+		return $currency_code !== '' ? $currency_code : wgpc_get_default_currency_code();
+	}
+
+	/**
+	 * Определяет стартовый баланс импортируемой карты.
+	 *
+	 * @param mixed      $balance Значение баланса из импорта.
+	 * @param float|null $nominal Номинал карты.
+	 * @return float|null
+	 */
+	private static function resolve_balance( $balance, $nominal ) {
+		if ( $balance !== null && $balance !== '' && is_numeric( $balance ) ) {
+			return round( (float) $balance, wc_get_price_decimals() );
+		}
+
+		if ( $nominal !== null ) {
+			return round( (float) $nominal, wc_get_price_decimals() );
+		}
+
+		return null;
 	}
 }

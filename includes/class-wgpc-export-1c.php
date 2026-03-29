@@ -32,7 +32,7 @@ class WGPC_Export_1C {
 		}
 
 		$sql = $wpdb->prepare(
-			"SELECT external_id, card_number, status, order_id, updated_at
+			"SELECT external_id, card_number, status, currency_code, balance, order_id, updated_at
 			FROM $table_name
 			WHERE status IN ('sold', 'activated')
 			AND external_id IS NOT NULL
@@ -49,13 +49,13 @@ class WGPC_Export_1C {
 
 	/**
 	 * Форматирует массив карт в CSV (разделитель ;, UTF-8).
-	 * Колонки: external_id; card_number; status; order_id; activated_at
+	 * Колонки: external_id; card_number; status; currency_code; balance; order_id; activated_at
 	 *
 	 * @param array<int, array<string, mixed>> $rows Результат get_cards_for_export().
 	 * @return string
 	 */
 	public static function format_as_csv( array $rows ) {
-		$header = array( 'external_id', 'card_number', 'status', 'order_id', 'activated_at' );
+		$header = array( 'external_id', 'card_number', 'status', 'currency_code', 'balance', 'order_id', 'activated_at' );
 		$lines  = array( implode( ';', $header ) );
 
 		foreach ( $rows as $row ) {
@@ -65,6 +65,8 @@ class WGPC_Export_1C {
 				self::csv_cell( isset( $row['external_id'] ) ? (string) $row['external_id'] : '' ),
 				self::csv_cell( isset( $row['card_number'] ) ? (string) $row['card_number'] : '' ),
 				self::csv_cell( isset( $row['status'] ) ? (string) $row['status'] : '' ),
+				self::csv_cell( isset( $row['currency_code'] ) ? (string) $row['currency_code'] : '' ),
+				isset( $row['balance'] ) && $row['balance'] !== null ? (string) $row['balance'] : '',
 				(string) $order_id,
 				self::csv_cell( $activated_at ),
 			);

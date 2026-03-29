@@ -183,7 +183,7 @@ class WGPC_Admin {
 			</form>
 
 			<h2 style="margin-top: 2em;"><?php esc_html_e( 'Импорт из 1С', 'woo-gift-physic-card' ); ?></h2>
-			<p class="description"><?php esc_html_e( 'Загрузите CSV-файл с разделителем «;». Колонки: external_id; card_number; nominal; status_1c. Первая строка — заголовок.', 'woo-gift-physic-card' ); ?></p>
+			<p class="description"><?php esc_html_e( 'Загрузите CSV-файл с разделителем «;». Обязательные колонки: external_id; card_number; nominal; status_1c. Дополнительно можно передать: currency_code; balance. Первая строка — заголовок.', 'woo-gift-physic-card' ); ?></p>
 			<form method="post" action="" enctype="multipart/form-data" style="max-width: 600px; margin: 1em 0;">
 				<?php wp_nonce_field( 'wgpc_import_1c', 'wgpc_import_nonce' ); ?>
 				<p>
@@ -202,7 +202,7 @@ class WGPC_Admin {
 				<?php
 				printf(
 					/* translators: %d: number of cards */
-					esc_html__( 'Сейчас таких карт: %d. Колонки CSV: external_id; card_number; status; order_id; activated_at.', 'woo-gift-physic-card' ),
+					esc_html__( 'Сейчас таких карт: %d. Колонки CSV: external_id; card_number; status; currency_code; balance; order_id; activated_at.', 'woo-gift-physic-card' ),
 					$export_count
 				);
 				?>
@@ -700,6 +700,14 @@ class WGPC_Admin {
 			$indexes[ $col ] = $pos;
 		}
 
+		$optional = array( 'currency_code', 'balance' );
+		foreach ( $optional as $col ) {
+			$pos = array_search( $col, $header, true );
+			if ( $pos !== false ) {
+				$indexes[ $col ] = $pos;
+			}
+		}
+
 		$rows = array();
 		while ( ( $line = fgetcsv( $handle, 0, ';' ) ) !== false ) {
 			if ( count( $line ) < 2 ) {
@@ -710,6 +718,8 @@ class WGPC_Admin {
 				'card_number' => isset( $line[ $indexes['card_number'] ] ) ? trim( (string) $line[ $indexes['card_number'] ] ) : '',
 				'nominal'     => isset( $line[ $indexes['nominal'] ] ) ? trim( (string) $line[ $indexes['nominal'] ] ) : '',
 				'status_1c'   => isset( $line[ $indexes['status_1c'] ] ) ? trim( (string) $line[ $indexes['status_1c'] ] ) : '',
+				'currency_code' => isset( $indexes['currency_code'], $line[ $indexes['currency_code'] ] ) ? trim( (string) $line[ $indexes['currency_code'] ] ) : '',
+				'balance'       => isset( $indexes['balance'], $line[ $indexes['balance'] ] ) ? trim( (string) $line[ $indexes['balance'] ] ) : '',
 			);
 			$rows[] = $row;
 		}
