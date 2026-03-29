@@ -54,6 +54,10 @@ function wgpc_init() {
 	require_once WGPC_PLUGIN_DIR . 'includes/wgpc-pw-compat.php';
 	wgpc_ensure_pw_recipient_name_column();
 
+	// Синхронизация остатка физической карты с балансом из PW Gift Cards.
+	require_once WGPC_PLUGIN_DIR . 'includes/wgpc-balance-sync.php';
+	wgpc_register_balance_sync_hooks();
+
 	// Обработчик заказа: при «Выполнен» подставляем физическую карту из пула (приоритет 9, до PW).
 	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-order-handler.php';
 	new WGPC_Order_Handler();
