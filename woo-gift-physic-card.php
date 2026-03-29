@@ -46,6 +46,8 @@ function wgpc_init() {
 	// Функция имени таблицы нужна везде (админка, обработка заказов).
 	require_once WGPC_PLUGIN_DIR . 'includes/wgpc-database.php';
 	require_once WGPC_PLUGIN_DIR . 'includes/wgpc-install.php';
+	wgpc_maybe_add_currency_code_column();
+	wgpc_maybe_add_balance_column();
 	wgpc_maybe_add_exported_column();
 
 	// Совместимость с PW: если в таблице pimwick_gift_card нет столбца recipient_name — добавить (один раз).

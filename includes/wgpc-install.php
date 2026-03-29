@@ -32,6 +32,8 @@ function wgpc_install_table() {
 		card_number varchar(128) NOT NULL,
 		status varchar(32) NOT NULL DEFAULT 'available',
 		nominal decimal(12,2) DEFAULT NULL,
+		currency_code varchar(8) DEFAULT NULL,
+		balance decimal(12,2) DEFAULT NULL,
 		order_id bigint(20) unsigned DEFAULT NULL,
 		order_item_id bigint(20) unsigned DEFAULT NULL,
 		pimwick_gift_card_id int(10) unsigned DEFAULT NULL,
@@ -67,4 +69,53 @@ function wgpc_maybe_add_exported_column() {
 	if ( empty( $row ) ) {
 		$wpdb->query( "ALTER TABLE $table_escaped ADD COLUMN `$column` datetime DEFAULT NULL AFTER updated_at" );
 	}
+}
+
+/**
+ * Добавляет поле currency_code в таблицу, если его ещё нет.
+ *
+ * @return void
+ */
+function wgpc_maybe_add_currency_code_column() {
+	wgpc_maybe_add_table_column(
+		'currency_code',
+		'varchar(8) DEFAULT NULL',
+		'AFTER nominal'
+	);
+}
+
+/**
+ * Добавляет поле balance в таблицу, если его ещё нет.
+ *
+ * @return void
+ */
+function wgpc_maybe_add_balance_column() {
+	wgpc_maybe_add_table_column(
+		'balance',
+		'decimal(12,2) DEFAULT NULL',
+		'AFTER currency_code'
+	);
+}
+
+/**
+ * Универсально добавляет колонку в таблицу физических карт, если она отсутствует.
+ *
+ * @param string $column_name Имя колонки.
+ * @param string $definition  SQL-описание колонки.
+ * @param string $position    Позиция в ALTER TABLE, например AFTER nominal.
+ * @return void
+ */
+function wgpc_maybe_add_table_column( $column_name, $definition, $position = '' ) {
+	global $wpdb;
+
+	$table_name    = wgpc_get_table_name();
+	$table_escaped = '`' . str_replace( '`', '``', $table_name ) . '`';
+	$row           = $wpdb->get_row( $wpdb->prepare( "SHOW COLUMNS FROM $table_escaped LIKE %s", $column_name ), ARRAY_A );
+
+	if ( ! empty( $row ) ) {
+		return;
+	}
+
+	$position_sql = $position ? ' ' . trim( $position ) : '';
+	$wpdb->query( "ALTER TABLE $table_escaped ADD COLUMN `$column_name` $definition$position_sql" );
 }
