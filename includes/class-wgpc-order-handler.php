@@ -38,6 +38,8 @@ class WGPC_Order_Handler {
 	 * Приоритет 9 — чтобы сработать до PW (у них 11).
 	 */
 	public function __construct() {
+		add_action( 'woocommerce_order_status_processing', array( $this, 'assign_physical_cards' ), 9, 2 );
+		add_action( 'woocommerce_payment_complete', array( $this, 'assign_physical_cards' ), 9, 1 );
 		add_action( 'woocommerce_order_status_completed', array( $this, 'assign_physical_cards' ), 9, 2 );
 	}
 
