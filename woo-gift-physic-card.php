@@ -56,14 +56,16 @@ function wgpc_init() {
 	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-order-handler.php';
 	new WGPC_Order_Handler();
 
-	// REST API для будущего обмена с 1С. Подключаем всегда, не только в админке.
+	// Классы импорта/экспорта нужны и для REST API (запросы идут не из админки), и для админки.
+	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-import-1c.php';
+	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-export-1c.php';
+
+	// REST API для обмена с 1С. Подключаем всегда.
 	require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-rest-api.php';
 	new WGPC_REST_API();
 
 	// Админка: пункт меню и страница «Физические карты» — только в бэкенде.
 	if ( is_admin() ) {
-		require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-import-1c.php';
-		require_once WGPC_PLUGIN_DIR . 'includes/class-wgpc-export-1c.php';
 		require_once WGPC_PLUGIN_DIR . 'admin/class-wgpc-admin.php';
 		new WGPC_Admin();
 	}

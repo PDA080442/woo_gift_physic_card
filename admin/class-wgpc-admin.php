@@ -64,6 +64,8 @@ class WGPC_Admin {
 		$this->handle_import_1c();
 		// Обработка POST — добавление новой карты. После успеха редирект с сообщением.
 		$this->handle_add_card();
+		// Обработка POST — удаление карты. После успеха редирект с сообщением.
+		$this->handle_delete_card();
 		// Обработка POST — настройки REST для обмена с 1С (редирект после сохранения).
 		$this->handle_rest_settings_save();
 		// Обработка POST — очистка лога ошибок REST.
@@ -102,6 +104,10 @@ class WGPC_Admin {
 			// Сообщение об успешном добавлении (после редиректа с wgpc_added=1).
 			if ( isset( $_GET['wgpc_added'] ) && (int) $_GET['wgpc_added'] === 1 ) {
 				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Карта добавлена.', 'woo-gift-physic-card' ) . '</p></div>';
+			}
+			// Сообщение об успешном удалении (после редиректа с wgpc_deleted=1).
+			if ( isset( $_GET['wgpc_deleted'] ) && (int) $_GET['wgpc_deleted'] === 1 ) {
+				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Карта удалена.', 'woo-gift-physic-card' ) . '</p></div>';
 			}
 			if ( isset( $_GET['wgpc_error'] ) ) {
 				$msg = sanitize_text_field( wp_unslash( $_GET['wgpc_error'] ) );
@@ -319,12 +325,13 @@ class WGPC_Admin {
 						<th><?php esc_html_e( 'Статус', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Заказ', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Создана', 'woo-gift-physic-card' ); ?></th>
+						<th><?php esc_html_e( 'Действия', 'woo-gift-physic-card' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php
 					if ( empty( $rows ) ) {
-						echo '<tr><td colspan="6">' . esc_html__( 'Нет карт.', 'woo-gift-physic-card' ) . '</td></tr>';
+						echo '<tr><td colspan="7">' . esc_html__( 'Нет карт.', 'woo-gift-physic-card' ) . '</td></tr>';
 					} else {
 						foreach ( $rows as $row ) {
 							$nominal = $row['nominal'] !== null ? number_format_i18n( (float) $row['nominal'], 2 ) : '—';
@@ -334,6 +341,30 @@ class WGPC_Admin {
 							} else {
 								$order_link = '—';
 							}
+							
+							// Проверяем, можно ли удалить карту (нельзя удалять проданные/активированные)
+							$can_delete = ! in_array( $row['status'], array( 'sold', 'activated' ), true );
+							$delete_button = '';
+							if ( $can_delete ) {
+								$delete_args = array(
+									'page' => self::PAGE_SLUG,
+									'action' => 'delete',
+									'card_id' => (int) $row['id'],
+								);
+								// Сохраняем фильтр по статусу в URL удаления
+								if ( $filter_status !== '' ) {
+									$delete_args['status'] = $filter_status;
+								}
+								$delete_url = wp_nonce_url(
+									add_query_arg( $delete_args, admin_url( 'admin.php' ) ),
+									'wgpc_delete_card_' . (int) $row['id'],
+									'wgpc_delete_nonce'
+								);
+								$delete_button = '<a href="' . esc_url( $delete_url ) . '" class="button button-link-delete" onclick="return confirm(\'' . esc_js( __( 'Вы уверены, что хотите удалить эту карту?', 'woo-gift-physic-card' ) ) . '\');">' . esc_html__( 'Удалить', 'woo-gift-physic-card' ) . '</a>';
+							} else {
+								$delete_button = '<span class="description">' . esc_html__( 'Нельзя удалить', 'woo-gift-physic-card' ) . '</span>';
+							}
+							
 							echo '<tr>';
 							echo '<td>' . (int) $row['id'] . '</td>';
 							echo '<td>' . esc_html( $row['card_number'] ) . '</td>';
@@ -341,6 +372,7 @@ class WGPC_Admin {
 							echo '<td>' . esc_html( $row['status'] ) . '</td>';
 							echo '<td>' . wp_kses_post( $order_link ) . '</td>';
 							echo '<td>' . esc_html( $row['created_at'] ) . '</td>';
+							echo '<td>' . wp_kses_post( $delete_button ) . '</td>';
 							echo '</tr>';
 						}
 					}
@@ -349,6 +381,74 @@ class WGPC_Admin {
 			</table>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Обработка GET: удаление карты по ID. Проверка nonce, статуса, DELETE, редирект.
+	 */
+	private function handle_delete_card() {
+		if ( ! isset( $_GET['action'] ) || $_GET['action'] !== 'delete' || ! isset( $_GET['card_id'] ) ) {
+			return;
+		}
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'woo-gift-physic-card' ) );
+		}
+
+		$card_id = (int) $_GET['card_id'];
+		if ( $card_id <= 0 ) {
+			wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'wgpc_error' => urlencode( __( 'Неверный ID карты.', 'woo-gift-physic-card' ) ) ), admin_url( 'admin.php' ) ) );
+			exit;
+		}
+
+		if ( ! isset( $_GET['wgpc_delete_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['wgpc_delete_nonce'] ) ), 'wgpc_delete_card_' . $card_id ) ) {
+			wp_die( esc_html__( 'Ошибка проверки безопасности. Обновите страницу и попробуйте снова.', 'woo-gift-physic-card' ) );
+		}
+
+		global $wpdb;
+		$table_name = wgpc_get_table_name();
+
+		// Проверяем существование карты и её статус
+		$card = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, status, order_id FROM $table_name WHERE id = %d",
+			$card_id
+		), ARRAY_A );
+
+		if ( ! $card ) {
+			wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'wgpc_error' => urlencode( __( 'Карта не найдена.', 'woo-gift-physic-card' ) ) ), admin_url( 'admin.php' ) ) );
+			exit;
+		}
+
+		// Нельзя удалять проданные или активированные карты
+		if ( in_array( $card['status'], array( 'sold', 'activated' ), true ) ) {
+			wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'wgpc_error' => urlencode( __( 'Нельзя удалить карту со статусом «проданная» или «активированная».', 'woo-gift-physic-card' ) ) ), admin_url( 'admin.php' ) ) );
+			exit;
+		}
+
+		// Удаляем карту
+		$deleted = $wpdb->delete(
+			$table_name,
+			array( 'id' => $card_id ),
+			array( '%d' )
+		);
+
+		if ( $deleted === false ) {
+			$redirect_args = array( 'page' => self::PAGE_SLUG, 'wgpc_error' => urlencode( $wpdb->last_error ?: __( 'Ошибка при удалении карты.', 'woo-gift-physic-card' ) ) );
+			// Сохраняем фильтр по статусу, если он был установлен
+			if ( isset( $_GET['status'] ) ) {
+				$redirect_args['status'] = sanitize_text_field( wp_unslash( $_GET['status'] ) );
+			}
+			wp_safe_redirect( add_query_arg( $redirect_args, admin_url( 'admin.php' ) ) );
+			exit;
+		}
+
+		$redirect_args = array( 'page' => self::PAGE_SLUG, 'wgpc_deleted' => '1' );
+		// Сохраняем фильтр по статусу, если он был установлен
+		if ( isset( $_GET['status'] ) ) {
+			$redirect_args['status'] = sanitize_text_field( wp_unslash( $_GET['status'] ) );
+		}
+		wp_safe_redirect( add_query_arg( $redirect_args, admin_url( 'admin.php' ) ) );
+		exit;
 	}
 
 	/**
