@@ -19,6 +19,74 @@ function wgpc_register_balance_sync_hooks() {
 }
 
 /**
+ * Один раз заполняет balance и currency_code у старых карт.
+ *
+ * @return void
+ */
+function wgpc_maybe_backfill_balance_data() {
+	$option_key = 'wgpc_balance_data_backfilled';
+	if ( get_option( $option_key, '0' ) === '1' ) {
+		return;
+	}
+
+	global $wpdb;
+
+	$table_name = wgpc_get_table_name();
+	$rows       = $wpdb->get_results(
+		"SELECT id, card_number, nominal, currency_code, balance, pimwick_gift_card_id
+		FROM $table_name
+		WHERE currency_code IS NULL OR currency_code = '' OR balance IS NULL",
+		ARRAY_A
+	);
+
+	if ( ! is_array( $rows ) ) {
+		return;
+	}
+
+	foreach ( $rows as $row ) {
+		$updated = false;
+
+		if ( ! empty( $row['pimwick_gift_card_id'] ) ) {
+			$updated = wgpc_sync_physical_card_balance_by_pw_id( (int) $row['pimwick_gift_card_id'] );
+		} elseif ( ! empty( $row['card_number'] ) ) {
+			$updated = wgpc_sync_physical_card_balance_by_number( (string) $row['card_number'] );
+		}
+
+		if ( $updated ) {
+			continue;
+		}
+
+		$currency_code = ! empty( $row['currency_code'] ) ? (string) $row['currency_code'] : wgpc_get_default_currency_code();
+		$balance       = $row['balance'];
+
+		if ( $balance === null && $row['nominal'] !== null && is_numeric( $row['nominal'] ) ) {
+			$balance = round( (float) $row['nominal'], wc_get_price_decimals() );
+		}
+
+		$update_data = array(
+			'currency_code' => $currency_code,
+			'updated_at'    => current_time( 'mysql' ),
+		);
+		$formats = array( '%s', '%s' );
+
+		if ( $balance !== null && is_numeric( $balance ) ) {
+			$update_data['balance'] = (float) $balance;
+			$formats[]             = '%f';
+		}
+
+		$wpdb->update(
+			$table_name,
+			$update_data,
+			array( 'id' => (int) $row['id'] ),
+			$formats,
+			array( '%d' )
+		);
+	}
+
+	update_option( $option_key, '1' );
+}
+
+/**
  * Возвращает код валюты магазина по умолчанию.
  *
  * @return string
