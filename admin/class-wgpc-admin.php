@@ -89,7 +89,7 @@ class WGPC_Admin {
 			$params[] = $filter_status;
 		}
 
-		$sql = "SELECT id, card_number, status, nominal, order_id, created_at FROM $table_name WHERE $where ORDER BY id DESC LIMIT 500";
+		$sql = "SELECT id, card_number, status, nominal, currency_code, balance, order_id, created_at FROM $table_name WHERE $where ORDER BY id DESC LIMIT 500";
 		if ( ! empty( $params ) ) {
 			$sql = $wpdb->prepare( $sql, $params );
 		}
@@ -151,7 +151,15 @@ class WGPC_Admin {
 						<th><label for="wgpc_nominal"><?php esc_html_e( 'Номинал (₽)', 'woo-gift-physic-card' ); ?></label></th>
 						<td>
 							<input type="number" name="nominal" id="wgpc_nominal" min="0" step="0.01" value="" placeholder="<?php esc_attr_e( 'пусто = любая сумма', 'woo-gift-physic-card' ); ?>" />
-							<p class="description"><?php esc_html_e( 'Оставьте пустым, если карта под любую сумму.', 'woo-gift-physic-card' ); ?></p>
+							<p class="description">
+								<?php
+								printf(
+									/* translators: %s: store currency code */
+									esc_html__( 'Оставьте пустым, если карта под любую сумму. Валюта для новых карт будет установлена автоматически: %s.', 'woo-gift-physic-card' ),
+									esc_html( wgpc_get_default_currency_code() )
+								);
+								?>
+							</p>
 						</td>
 					</tr>
 					<tr>
@@ -322,6 +330,8 @@ class WGPC_Admin {
 						<th><?php esc_html_e( 'ID', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Номер карты', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Номинал', 'woo-gift-physic-card' ); ?></th>
+						<th><?php esc_html_e( 'Валюта', 'woo-gift-physic-card' ); ?></th>
+						<th><?php esc_html_e( 'Баланс', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Статус', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Заказ', 'woo-gift-physic-card' ); ?></th>
 						<th><?php esc_html_e( 'Создана', 'woo-gift-physic-card' ); ?></th>
@@ -331,10 +341,12 @@ class WGPC_Admin {
 				<tbody>
 					<?php
 					if ( empty( $rows ) ) {
-						echo '<tr><td colspan="7">' . esc_html__( 'Нет карт.', 'woo-gift-physic-card' ) . '</td></tr>';
+						echo '<tr><td colspan="9">' . esc_html__( 'Нет карт.', 'woo-gift-physic-card' ) . '</td></tr>';
 					} else {
 						foreach ( $rows as $row ) {
 							$nominal = $row['nominal'] !== null ? number_format_i18n( (float) $row['nominal'], 2 ) : '—';
+							$currency_code = ! empty( $row['currency_code'] ) ? (string) $row['currency_code'] : '—';
+							$balance = $row['balance'] !== null ? number_format_i18n( (float) $row['balance'], 2 ) : '—';
 							$order_link = '';
 							if ( ! empty( $row['order_id'] ) ) {
 								$order_link = '<a href="' . esc_url( admin_url( 'post.php?post=' . (int) $row['order_id'] . '&action=edit' ) ) . '">#' . (int) $row['order_id'] . '</a>';
@@ -369,6 +381,8 @@ class WGPC_Admin {
 							echo '<td>' . (int) $row['id'] . '</td>';
 							echo '<td>' . esc_html( $row['card_number'] ) . '</td>';
 							echo '<td>' . esc_html( $nominal ) . '</td>';
+							echo '<td>' . esc_html( $currency_code ) . '</td>';
+							echo '<td>' . esc_html( $balance ) . '</td>';
 							echo '<td>' . esc_html( $row['status'] ) . '</td>';
 							echo '<td>' . wp_kses_post( $order_link ) . '</td>';
 							echo '<td>' . esc_html( $row['created_at'] ) . '</td>';
@@ -476,6 +490,8 @@ class WGPC_Admin {
 
 		$nominal = isset( $_POST['nominal'] ) ? sanitize_text_field( wp_unslash( $_POST['nominal'] ) ) : null;
 		$nominal = $nominal !== '' ? (float) $nominal : null;
+		$currency_code = wgpc_get_default_currency_code();
+		$balance = $nominal !== null ? round( (float) $nominal, wc_get_price_decimals() ) : null;
 		$status = isset( $_POST['status'] ) ? sanitize_text_field( wp_unslash( $_POST['status'] ) ) : 'available';
 		$notes  = isset( $_POST['notes'] ) ? sanitize_textarea_field( wp_unslash( $_POST['notes'] ) ) : null;
 		$notes  = $notes !== '' ? $notes : null;
@@ -505,6 +521,8 @@ class WGPC_Admin {
 				'card_number' => $card_number,
 				'status'      => $status,
 				'nominal'     => $nominal,
+				'currency_code' => $currency_code,
+				'balance'     => $balance,
 				'order_id'    => null,
 				'order_item_id' => null,
 				'pimwick_gift_card_id' => null,
@@ -513,7 +531,7 @@ class WGPC_Admin {
 				'updated_at'  => $now,
 				'notes'       => $notes,
 			),
-			array( '%s', '%s', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%f', '%s', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s' )
 		);
 
 		if ( $wpdb->last_error ) {
