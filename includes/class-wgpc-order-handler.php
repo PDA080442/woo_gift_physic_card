@@ -128,6 +128,10 @@ class WGPC_Order_Handler {
 				}
 
 				$gift_card->credit( $amount, $note );
+				$actual_balance = wgpc_get_pw_gift_card_balance_by_id( (int) $gift_card->get_id(), $gift_card );
+				if ( $actual_balance === null ) {
+					$actual_balance = round( (float) $amount, wc_get_price_decimals() );
+				}
 
 				// Связываем карту PW с заказом/позицией (как делает PW).
 				$gift_card->set_product_id( $order_item->get_product_id() );
@@ -140,13 +144,15 @@ class WGPC_Order_Handler {
 					$table_name,
 					array(
 						'status'                 => 'activated',
+						'balance'                => $actual_balance,
+						'currency_code'          => wgpc_get_default_currency_code(),
 						'order_id'               => $order_id,
 						'order_item_id'          => $order_item_id,
 						'pimwick_gift_card_id'   => $gift_card->get_id(),
 						'updated_at'             => $now,
 					),
 					array( 'id' => $physical_id ),
-					array( '%s', '%d', '%d', '%d', '%s' ),
+					array( '%s', '%f', '%s', '%d', '%d', '%d', '%s' ),
 					array( '%d' )
 				);
 
